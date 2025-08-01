@@ -11,7 +11,7 @@ class UserController
     }
 
     // Fungsi register user baru
-    public function register($username, $email, $password)
+    public function register($username, $email, $password, $createdAt)
     {
         // Hash password sebelum disimpan
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
@@ -29,8 +29,8 @@ class UserController
         $stmt->close();
 
         // Insert user baru
-        $stmt = $this->conn->prepare("INSERT INTO user (username, email, password) VALUES (?, ?, ?)");
-        $stmt->bind_param("sss", $username, $email, $hashedPassword);
+        $stmt = $this->conn->prepare("INSERT INTO user (username, email, password, created_at) VALUES (?, ?, ?, NOW())");
+        $stmt->bind_param("ssss", $username, $email, $hashedPassword, $createdAt);
 
         if ($stmt->execute()) {
             return ['success' => true, 'message' => 'Registrasi berhasil'];
