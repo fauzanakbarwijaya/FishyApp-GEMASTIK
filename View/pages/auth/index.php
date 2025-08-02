@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Login User</title>
     <link rel="stylesheet" href="/FISHYAPP/View/Assets/css/bootstrap.min.css">
     <link rel="stylesheet" href="/FISHYAPP/View/Assets/css/style.css">
     <link rel="shortcut icon" href="/FISHYAPP/View/Assets/icons/logo-background.png" type="image/x-icon">
