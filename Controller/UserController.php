@@ -30,7 +30,7 @@ class UserController
 
         // Insert user baru
         $stmt = $this->conn->prepare("INSERT INTO user (username, email, password, created_at) VALUES (?, ?, ?, NOW())");
-        $stmt->bind_param("ssss", $username, $email, $hashedPassword, $createdAt);
+        $stmt->bind_param("sss", $username, $email, $hashedPassword);
 
         if ($stmt->execute()) {
             return ['success' => true, 'message' => 'Registrasi berhasil'];
