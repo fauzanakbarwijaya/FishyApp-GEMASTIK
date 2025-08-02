@@ -20,6 +20,10 @@ SET time_zone = "+00:00";
 --
 -- Database: `fishyapp`
 --
+CREATE DATABASE IF NOT EXISTS fishyapp;
+USE fishyapp;
+
+DROP TABLE IF EXISTS `user`;
 
 -- --------------------------------------------------------
 
