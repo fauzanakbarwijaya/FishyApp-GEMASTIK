@@ -1,4 +1,8 @@
+<?php
 
+$currentPage = basename($_SERVER['PHP_SELF']);
+
+?>
 
 <!-- Bottom Navigation Bar -->
 <nav class="navbar navbar-expand navbar-light fixed-bottom navbar-bottom shadow" style="background-color: #2B3788;">
