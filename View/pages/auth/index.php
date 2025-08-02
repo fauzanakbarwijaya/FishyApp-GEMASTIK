@@ -13,6 +13,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $success = $result['success'];
     // Jika login berhasil, bisa set session di sini jika diperlukan
     // $_SESSION['user_id'] = $result['user_id'];
+
+    // Redirect ke explore.html jika login sukses
+    if ($success) {
+        header("Location: /FishyApp-GEMASTIK/View/pages/auth/explore.html");
+        exit;
+    }
 }
 ?>
 
@@ -38,10 +44,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 text: '<?= htmlspecialchars($message, ENT_QUOTES) ?>',
                 showConfirmButton: true,
                 timer: <?= $success ? "2000" : "3000" ?>
-            }).then(() => {
-                <?php if ($success): ?>
-                    window.location.href = "homepage.php";
-                <?php endif; ?>
             });
         </script>
     <?php endif; ?>
