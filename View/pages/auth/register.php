@@ -41,7 +41,7 @@
                 timer: <?= $success ? "2000" : "3000" ?>
             }).then(() => {
                 <?php if ($success): ?>
-                    window.location.href = "login.php";
+                    window.location.href = "index.php";
                 <?php endif; ?>
             });
         </script>

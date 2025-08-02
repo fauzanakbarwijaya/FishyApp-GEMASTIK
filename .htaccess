@@ -1,2 +1,2 @@
 RewriteEngine On
-RewriteRule ^$ View/pages/auth/index.html [L]
+RewriteRule ^$ View/pages/auth/index.php [L]
