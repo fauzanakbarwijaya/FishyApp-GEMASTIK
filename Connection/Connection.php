@@ -1,5 +1,8 @@
 <?php
 
+$rootFolder = basename(dirname(__DIR__));
+define('BASE_URL', '/' . $rootFolder);
+
 $host = "localhost";
 $user = "root";
 $password = "";
