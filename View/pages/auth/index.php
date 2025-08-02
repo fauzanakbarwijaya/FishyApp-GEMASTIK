@@ -23,9 +23,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login</title>
-    <link rel="stylesheet" href="/FISHYAPP/View/Assets/css/bootstrap.min.css">
-    <link rel="stylesheet" href="/FISHYAPP/View/Assets/css/style.css">
-    <link rel="shortcut icon" href="/FISHYAPP/View/Assets/icons/logo-background.png" type="image/x-icon">
+    <link rel="stylesheet" href="<?= BASE_URL ?>/View/Assets/css/bootstrap.min.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>/View/Assets/css/style.css">
+    <link rel="shortcut icon" href="<?= BASE_URL ?>/View/Assets/icons/logo-background.png" type="image/x-icon">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php endif; ?>
     <div class="container" style="max-width: 400px;">
         <div class="text-center mb-4">
-            <img src="/FISHYAPP/View/Assets/icons/logo-primary.png" alt="Logo" class="img-fluid"
+            <img src="<?= BASE_URL ?>/View/Assets/icons/logo-primary.png" alt="Logo" class="img-fluid"
                 style="width: 60px;" />
         </div>
 
@@ -86,19 +86,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <div class="text-center mb-4">
             <a href="#" class="d-inline-block">
-                <img src="/FISHYAPP/View/Assets/icons/google.png" width="36" alt="Google Sign In" />
+                <img src="<?= BASE_URL ?>/View/Assets/icons/google.png" width="36" alt="Google Sign In" />
             </a>
         </div>
 
         <p class="text-center text-muted">
             Don't have an account?
-            <a href="/FISHYAPP/View/pages/auth/register.php" class="fw-semibold text-decoration-none" style="color: #2B3788;">Sign Up Here</a>
+            <a href="<?= BASE_URL ?>/View/pages/auth/register.php" class="fw-semibold text-decoration-none" style="color: #2B3788;">Sign Up Here</a>
         </p>
     </div>
 
 
 
-    <script src="/FISHYAPP/View/Assets/js/bootstrap.bundle.min.js"></script>
+    <script src="<?= BASE_URL ?>/View/Assets/js/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>
