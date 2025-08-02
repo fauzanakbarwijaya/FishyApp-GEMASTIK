@@ -109,7 +109,7 @@
 
 
 
-    <script src="/FISHYAPP/View/Assets/js/bootstrap.bundle.min.js"></script>
+    <script src="<?= BASE_URL ?>/View/Assets/js/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>
