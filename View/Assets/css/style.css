@@ -1,8 +1,101 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap');
-@import url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css");
 
+/* General Body Style */
 body {
     font-family: 'Montserrat', sans-serif;
-
+    background-color: #ffffff;
+    padding-bottom: 100px; /* Make space for the fixed bottom nav */
 }
 
+.main-content {
+    padding-top: 2rem;
+}
+
+/* Profile Avatar */
+.profile-avatar {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 2rem auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px; /* Add some padding so the image doesn't touch the border */
+}
+.profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Ensures the whole icon is visible */
+}
+
+/* Form Container */
+.form-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+/* Styling Bootstrap's Input Group to match your design */
+.input-group {
+    border-radius: 20px !important;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
+    overflow: hidden;
+}
+
+.input-group .input-group-text {
+    background: #ffffff;
+    border: none;
+    padding-left: 20px;
+}
+
+/* NEW: Style for the image icons inside the input fields */
+.input-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.input-group .form-control {
+    border: none;
+    background: #ffffff;
+    box-shadow: none !important;
+    padding: 12px;
+}
+
+/* Custom Button Styles */
+.btn-save-changes {
+    background: #2b3788;
+    color: white;
+    font-weight: bold;
+    border-radius: 10px;
+    padding: 12px;
+}
+.btn-save-changes:hover {
+    background: #1e2761;
+    color: white;
+}
+
+.btn-logout {
+    background: #2b3788;
+    color: white;
+    font-weight: bold;
+    border-radius: 10px;
+    padding: 10px 25px;
+    font-size: 15px;
+}
+.btn-logout:hover {
+    background: #1e2761;
+    color: white;
+}
+
+/* Logout Button Container (for positioning) */
+.logout-container {
+    position: fixed;
+    bottom: 100px;
+    right: 1rem;
+    z-index: 999;
+}
+
+/* Media query for small adjustments if needed, but the grid is handled by Bootstrap */
+@media (max-width: 767px) {
+    .form-container {
+        padding: 0 1rem;
+    }
+}
