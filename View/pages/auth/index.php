@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 timer: <?= $success ? "2000" : "3000" ?>
             }).then(() => {
                 <?php if ($success): ?>
-                    window.location.href = "<?= BASE_URL ?>/View/pages/homepage/explore.html";
+                    window.location.href = "<?= BASE_URL ?>/View/pages/homepage/explore.php";
                 <?php endif; ?>
             });
         </script>
