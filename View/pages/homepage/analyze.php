@@ -22,22 +22,16 @@
     <title>Analyze</title>
     
     <!-- Bootstrap CSS (Optional, as custom styles handle most of the layout) -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
-    
-    <!-- Google Fonts: Montserrat -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="<?= BASE_URL ?>/View/Assets/css/bootstrap.min.css">
 
-    <!-- Font Awesome for Icons (kept for fallback, but can be removed) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     
     <!-- Custom Styles -->
     <style>
         /* Basic setup */
         :root {
-            --primary-blue: #2563eb; /* A modern blue for highlights */
-            --nav-bg: #0d172a; /* Dark blue from screenshot */
+            --primary-blue: #2563eb; 
+            --nav-bg: #0d172a; 
             --error-red: #e74c3c;
             --info-green: #2ecc71;
         }
