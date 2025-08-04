@@ -43,16 +43,47 @@
     <script src="<?= BASE_URL ?>/View/Assets/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-    const map = L.map('map').setView([-6.183064, 106.8403371], 13); // Jakarta sebagai contoh
+    // --- Initialize the Map ---
+    // Default to Jakarta
+    const defaultLat = -6.183064;
+    const defaultLon = 106.8403371;
+    const map = L.map('map').setView([defaultLat, defaultLon], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    L.marker([-6.183064, 106.8403371]).addTo(map)
-        .bindPopup('UBSI KRAMAT!')
-        .openPopup();
-</script>
+    // --- Geolocation ---
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                map.setView([lat, lon], 15);
+                L.marker([lat, lon]).addTo(map)
+                    .bindPopup('You are here!')
+                    .openPopup();
+                L.circle([lat, lon], {
+                    color: 'blue',
+                    fillColor: '#3085d6',
+                    fillOpacity: 0.2,
+                    radius: position.coords.accuracy
+                }).addTo(map);
+            },
+            function(error) {
+                // Fallback marker if location not allowed
+                L.marker([defaultLat, defaultLon]).addTo(map)
+                    .bindPopup('Default Location (Jakarta)')
+                    .openPopup();
+            }
+        );
+    } else {
+        // Geolocation not supported
+        L.marker([defaultLat, defaultLon]).addTo(map)
+            .bindPopup('Default Location (Jakarta)')
+            .openPopup();
+    }
+    </script>
 
 </body>
 </html>
