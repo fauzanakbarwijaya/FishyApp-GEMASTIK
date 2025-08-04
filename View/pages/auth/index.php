@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../../Controller/UserController.php';
+session_start();
 
 $message = '';
 $success = false;
@@ -12,7 +13,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message = $result['message'];
     $success = $result['success'];
     // Jika login berhasil, bisa set session di sini jika diperlukan
-    // $_SESSION['user_id'] = $result['user_id'];
+    if ($success) {
+        $_SESSION['user_id'] = $result['user_id'];
+        $_SESSION['username'] = $username;
+        $_SESSION['email'] = $result['email'] ?? '';
+    }
 
 }
 ?>

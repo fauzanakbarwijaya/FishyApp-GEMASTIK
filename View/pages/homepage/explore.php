@@ -1,6 +1,6 @@
 <?php
+    session_start();
     require_once __DIR__ . '/../../../Connection/Connection.php';
-
 ?>
 
 <!DOCTYPE html>
@@ -13,11 +13,27 @@
     <link rel="stylesheet" href="<?= BASE_URL ?>/View/Assets/css/style.css">
     <link rel="shortcut icon" href="<?= BASE_URL ?>/View/Assets/icons/logo-background.png" type="image/x-icon">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 
 </head>
 <body>
     <!-- OpenStreetMap -->
+     <?php
+    if (!isset($_SESSION['user_id'])) {
+        echo '<script>
+            Swal.fire({
+                icon: "warning",
+                title: "Not Logged In",
+                text: "Silakan login untuk mengakses fitur ini.",
+                showConfirmButton: true
+            }).then(() => {
+                window.location.href = "../auth/index.php";
+            });
+        </script>';
+        exit;
+    }
+    ?>
     <div id="map" style="height: 100vh;"></div>
 
 
