@@ -205,10 +205,10 @@
         /* Notification System Styles */
         #notification-container {
             position: fixed;
-            top: 0;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 1000;
+            z-index: 4000;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -294,6 +294,49 @@
             cursor: not-allowed;
         }
 
+        /* --- NEW: Analysis Animation Styles --- */
+        #analysis-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3000; /* Above everything else */
+            background-color: #000;
+            display: none; /* Hidden by default */
+            justify-content: center;
+            align-items: center;
+        }
+
+        #analysis-canvas, #label-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #label-canvas {
+            z-index: 3002; /* On top of the 3D canvas */
+        }
+
+        #analysis-status {
+            position: absolute;
+            bottom: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #93c5fd; /* Light Blue */
+            font-size: 1.2rem;
+            font-weight: 500;
+            text-shadow: 0 0 8px #3b82f6, 0 0 12px #3b82f6;
+            background-color: rgba(10, 10, 25, 0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid #3b82f6;
+            z-index: 3003;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
     </style>
 </head>
 <body>
@@ -318,7 +361,7 @@
         <!-- Top Info Bar -->
         <div class="top-info">
             <button id="reset-button">
-                 <img src="back-arrow-icon.png" alt="Back to camera">
+                 <img src="https://img.icons8.com/ios-filled/50/ffffff/reply-arrow.png" alt="Back to camera">
             </button>
             <span id="wind-speed">-- mph</span>
             <span id="temperature">-- &deg;C</span>
@@ -333,7 +376,7 @@
             <div class="bottom-controls">
                 <div id="gallery-button-wrapper">
                     <button class="control-button" id="gallery-button" aria-label="Open Gallery">
-                        <img src="<?= BASE_URL ?>/View/Assets/icons/gallery.png" alt="Gallery">
+                        <img src="<?= BASE_URL ?>/View/Assets/icons/gallery.png" alt="Gallery" onerror="this.onerror=null;this.src='https://img.icons8.com/ios/50/000000/image.png';">
                     </button>
                 </div>
                 <div class="shutter-button-container">
@@ -341,19 +384,31 @@
                     <label for="shutter-button">Analyze</label>
                 </div>
                 <button class="control-button" id="flashlight-button" aria-label="Toggle Flashlight">
-                    <img src="<?= BASE_URL ?>/View/Assets/icons/flashlight_on.png" alt="Flashlight">
+                    <img id="flashlight-icon" src="<?= BASE_URL ?>/View/Assets/icons/flashlight_on.png" alt="Flashlight" onerror="this.onerror=null;this.src='https://img.icons8.com/ios-filled/50/000000/flash-on.png';">
                 </button>
             </div>
             <!-- Include the bottom navigation bar from your components -->
-            <?php require_once __DIR__ . '/../../../View/Components/bottom-nav.php'; ?>
+            <?php @require_once __DIR__ . '/../../../View/Components/bottom-nav.php'; ?>
         </div>
     </div>
     
+    <!-- NEW: Analysis Animation Container -->
+    <div id="analysis-container">
+        <canvas id="analysis-canvas"></canvas>
+        <canvas id="label-canvas"></canvas>
+        <div id="analysis-status">INITIALIZING...</div>
+    </div>
+
     <!-- Hidden elements for functionality -->
     <canvas id="photo-canvas" style="display:none;"></canvas>
     <input type="file" id="image-upload" accept="image/*" style="display: none;">
 
     <!-- JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- NEW: TensorFlow.js and COCO-SSD Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // UI Elements
@@ -371,15 +426,27 @@
             const canvas = document.getElementById('photo-canvas');
             const windSpeedEl = document.getElementById('wind-speed');
             const temperatureEl = document.getElementById('temperature');
+            const overlay = document.querySelector('.overlay');
+
+            // Analysis Animation Elements
+            const analysisContainer = document.getElementById('analysis-container');
+            const analysisCanvas = document.getElementById('analysis-canvas');
+            const labelCanvas = document.getElementById('label-canvas');
+            const analysisStatus = document.getElementById('analysis-status');
             
             // State
             let currentStream = null;
             let flashlightOn = false;
             let isCameraActive = true;
+            let model = null; // To hold the loaded ML model
 
             // --- Custom Notification Function ---
             function showNotification(message, type = 'info', duration = 4000) {
                 const container = document.getElementById('notification-container');
+                // Clear existing notifications
+                while (container.firstChild) {
+                    container.removeChild(container.firstChild);
+                }
                 const notification = document.createElement('div');
                 notification.className = `notification ${type}`;
                 notification.textContent = message;
@@ -405,12 +472,11 @@
                 }
             }
             
-            // --- NEW: Location Request Function ---
+            // --- Location Request Function ---
             function requestLocation() {
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                         (position) => {
-                            // Removed location granted notification
                             fetchWeatherData(position.coords.latitude, position.coords.longitude);
                         },
                         (error) => {
@@ -431,7 +497,6 @@
             // --- Permission and Initialization ---
             function requestPermissionsAndStart() {
                 permissionModal.style.display = 'none';
-                // Start with the camera first, as it's the primary visual element.
                 startCamera();
             }
 
@@ -444,13 +509,13 @@
             }
 
             async function startCamera() {
+                analysisContainer.style.display = 'none';
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     showNotification("Camera API not supported by your browser.", "error");
                     return;
                 }
-                stopCamera(); // Ensure any previous stream is stopped
+                stopCamera();
                 try {
-                    // Use facingMode: "environment" for better compatibility
                     const constraints = { video: { facingMode: "environment" }, audio: false };
                     const stream = await navigator.mediaDevices.getUserMedia(constraints);
                     currentStream = stream;
@@ -459,14 +524,10 @@
                     imagePreview.style.display = 'none';
                     isCameraActive = true;
                     updateControlsForCameraView();
-
-                    // Once camera is successfully started, request location for weather.
                     requestLocation();
-
                     video.addEventListener('loadedmetadata', () => setTimeout(checkFlashlightCapability, 500));
                 } catch (err) {
                     console.error("Error accessing camera with environment mode:", err);
-                    // Try fallback: any camera
                     try {
                         const fallbackConstraints = { video: true, audio: false };
                         const stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
@@ -476,13 +537,11 @@
                         imagePreview.style.display = 'none';
                         isCameraActive = true;
                         updateControlsForCameraView();
-
                         requestLocation();
-
                         video.addEventListener('loadedmetadata', () => setTimeout(checkFlashlightCapability, 500));
                     } catch (fallbackErr) {
                         console.error("Error accessing any camera:", fallbackErr);
-                        showNotification("Could not access camera. Please check browser permissions and close other apps using the camera.", "error");
+                        showNotification("Could not access camera. Please check permissions.", "error");
                     }
                 }
             }
@@ -499,7 +558,8 @@
             // --- UI Updates ---
             function updateControlsForCameraView() {
                 resetButton.style.display = 'none';
-                galleryButtonWrapper.style.display = 'block';
+                galleryButtonWrapper.style.display = 'grid';
+                overlay.style.display = 'grid';
                 checkFlashlightCapability();
             }
 
@@ -507,6 +567,7 @@
                 resetButton.style.display = 'flex';
                 galleryButtonWrapper.style.display = 'none';
                 flashlightButton.style.display = 'none';
+                overlay.style.display = 'grid';
             }
 
             // --- Flashlight Control ---
@@ -529,13 +590,12 @@
                 if (!currentStream) return;
                 const track = currentStream.getVideoTracks()[0];
                 try {
-                    // Toggle flashlight state
                     flashlightOn = !flashlightOn;
                     await track.applyConstraints({ advanced: [{ torch: flashlightOn }] });
-                    flashlightIcon.src = flashlightOn ? 'flashlight-on-icon.png' : 'flashlight-off-icon.png';
+                    flashlightIcon.src = flashlightOn ? '<?= BASE_URL ?>/View/Assets/icons/flashlight_on.png' : '<?= BASE_URL ?>/View/Assets/icons/flashlight_off.png';
                 } catch (err) {
                     console.error("Failed to toggle flashlight:", err);
-                    showNotification("Flashlight not supported on this device/browser.", "error");
+                    showNotification("Flashlight not supported on this device.", "error");
                 }
             }
 
@@ -563,9 +623,280 @@
                 context.drawImage(source, 0, 0, width, height);
                 
                 const imageDataUrl = canvas.toDataURL('image/jpeg');
-                console.log("Analysis initiated. Data URL:", imageDataUrl.substring(0, 50) + "...");
-                showNotification("habis itu muncul analysis animation baru ke form", "success");
+                
+                overlay.style.display = 'none';
+                analysisContainer.style.display = 'flex';
+                
+                runAnalysisAnimation(imageDataUrl);
             }
+
+            // --- PROFESSIONAL ANALYSIS ANIMATION ---
+            async function runAnalysisAnimation(imageUrl) {
+                let animationFrameId;
+                const clock = new THREE.Clock();
+                const labelCtx = labelCanvas.getContext('2d');
+
+                // --- Renderer and Scene ---
+                const scene = new THREE.Scene();
+                const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+                const renderer = new THREE.WebGLRenderer({ canvas: analysisCanvas, alpha: true, antialias: true });
+                
+                const resizeCanvases = () => {
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                    labelCanvas.width = window.innerWidth;
+                    labelCanvas.height = window.innerHeight;
+                };
+                resizeCanvases();
+                renderer.setPixelRatio(window.devicePixelRatio);
+
+                // --- Shaders ---
+                const vertexShader = `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = vec4(position, 1.0);
+                    }
+                `;
+
+                const fragmentShader = `
+                    uniform sampler2D tDiffuse;
+                    uniform vec2 resolution;
+                    uniform float time;
+                    uniform float scanLineY;
+
+                    varying vec2 vUv;
+                    
+                    float luminance(vec3 color) {
+                        return 0.2126 * color.r + 0.7154 * color.g + 0.072 * color.b;
+                    }
+                    
+                    vec3 rgb2hsv(vec3 c) {
+                        vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+                        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+                        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+                        float d = q.x - min(q.w, q.y);
+                        float e = 1.0e-10;
+                        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+                    }
+
+                    void main() {
+                        vec2 texel = vec2(1.0 / resolution.x, 1.0 / resolution.y);
+                        vec3 originalColor = texture2D(tDiffuse, vUv).rgb;
+                        
+                        float edge = 0.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(-texel.x, -texel.y)).rgb) * -1.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(0.0, -texel.y)).rgb) * -2.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(texel.x, -texel.y)).rgb) * -1.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(-texel.x, 0.0)).rgb) * 2.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb) * -2.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(-texel.x, texel.y)).rgb) * 1.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb) * 2.0;
+                        edge += luminance(texture2D(tDiffuse, vUv + vec2(texel.x, texel.y)).rgb) * 1.0;
+                        
+                        vec3 hsv = rgb2hsv(originalColor);
+                        bool isWater = hsv.x > 0.5 && hsv.x < 0.75 && hsv.y > 0.2 && hsv.z > 0.15;
+                        bool isPlant = hsv.x > 0.2 && hsv.x < 0.45 && hsv.y > 0.25 && hsv.z > 0.2;
+                        
+                        vec3 finalColor = originalColor * 0.5;
+
+                        if (vUv.y < scanLineY) {
+                            if (isWater) {
+                                float shimmer = sin(vUv.y * 300.0 + time * 6.0) * 0.5 + 0.5;
+                                vec3 waterColor = vec3(0.2, 0.5, 1.0);
+                                finalColor = mix(finalColor, waterColor, 0.7 * shimmer);
+                            }
+                            if (isPlant && !isWater) {
+                                vec3 plantColor = vec3(0.1, 1.0, 0.3);
+                                finalColor = mix(finalColor, plantColor, 0.6);
+                            }
+                            if (edge > 0.5) {
+                                finalColor = mix(finalColor, vec3(1.0, 0.2, 0.2), 0.8);
+                            }
+                        }
+
+                        float scanGlow = 1.0 - smoothstep(0.0, 0.015, abs(vUv.y - scanLineY));
+                        finalColor += vec3(0.6, 0.8, 1.0) * scanGlow * 0.6;
+                        
+                        float gridPattern = (mod(vUv.x * resolution.x, 25.0) < 1.0 || mod(vUv.y * resolution.y, 25.0) < 1.0) ? 0.1 : 0.0;
+                        finalColor += vec3(0.5, 0.7, 1.0) * gridPattern * (1.0 - scanGlow) * 0.5;
+
+                        gl_FragColor = vec4(finalColor, 1.0);
+                    }
+                `;
+                
+                // --- Object Detection Simulation ---
+                let detectedObjects = [];
+                
+                function rgbToHsv(r, g, b) {
+                    r /= 255, g /= 255, b /= 255;
+                    let max = Math.max(r, g, b), min = Math.min(r, g, b);
+                    let h, s, v = max;
+                    let d = max - min;
+                    s = max == 0 ? 0 : d / max;
+                    if (max == min) { h = 0; } 
+                    else {
+                        switch (max) {
+                            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                            case g: h = (b - r) / d + 2; break;
+                            case b: h = (r - g) / d + 4; break;
+                        }
+                        h /= 6;
+                    }
+                    return [h, s, v];
+                }
+
+                const analyzeEnvironmentWithColor = () => {
+                    const imgCanvas = document.getElementById('photo-canvas');
+                    const ctx = imgCanvas.getContext('2d');
+                    const imageData = ctx.getImageData(0, 0, imgCanvas.width, imgCanvas.height).data;
+                    let waterPixelCount = 0;
+                    const totalPixels = imgCanvas.width * imgCanvas.height;
+
+                    for(let i = 0; i < imageData.length; i += 4) {
+                        const r = imageData[i], g = imageData[i+1], b = imageData[i+2];
+                        const hsv = rgbToHsv(r, g, b);
+                        const isBlueish = hsv[0] > 0.5 && hsv[0] < 0.75;
+                        const isSaturatedEnough = hsv[1] > 0.2;
+                        const isBrightEnough = hsv[2] > 0.15;
+                        if (isBlueish && isSaturatedEnough && isBrightEnough) waterPixelCount++;
+                    }
+                    return (waterPixelCount / totalPixels) > 0.03;
+                };
+
+                const drawLabelBox = (obj) => {
+                    labelCtx.strokeStyle = obj.color;
+                    labelCtx.fillStyle = obj.color;
+                    labelCtx.font = "14px 'Courier New', monospace";
+                    labelCtx.shadowColor = obj.color;
+                    labelCtx.shadowBlur = 8;
+                    
+                    const p = Math.min(1, obj.progress / 0.8);
+                    const cornerSize = 15 * p;
+                    
+                    labelCtx.globalAlpha = p;
+                    labelCtx.beginPath();
+                    labelCtx.moveTo(obj.x, obj.y + cornerSize); labelCtx.lineTo(obj.x, obj.y); labelCtx.lineTo(obj.x + cornerSize, obj.y);
+                    labelCtx.moveTo(obj.x + obj.w - cornerSize, obj.y); labelCtx.lineTo(obj.x + obj.w, obj.y); labelCtx.lineTo(obj.x + obj.w, obj.y + cornerSize);
+                    labelCtx.moveTo(obj.x + obj.w, obj.y + obj.h - cornerSize); labelCtx.lineTo(obj.x + obj.w, obj.y + obj.h); labelCtx.lineTo(obj.x + obj.w - cornerSize, obj.y + obj.h);
+                    labelCtx.moveTo(obj.x + cornerSize, obj.y + obj.h); labelCtx.lineTo(obj.x, obj.y + obj.h); labelCtx.lineTo(obj.x, obj.y + obj.h - cornerSize);
+                    labelCtx.lineWidth = 2;
+                    labelCtx.stroke();
+
+                    if (p >= 1) {
+                       labelCtx.globalAlpha = Math.min(1, (obj.progress - 0.8) / 0.5);
+                       labelCtx.fillText(`${obj.label} [${(obj.score * 100).toFixed(1)}%]`, obj.x + 5, obj.y - 10);
+                    }
+                    labelCtx.globalAlpha = 1.0;
+                    labelCtx.shadowBlur = 0;
+                };
+
+                // --- Scene Setup ---
+                const textureLoader = new THREE.TextureLoader();
+                textureLoader.load(imageUrl, async (texture) => {
+                    
+                    analysisStatus.textContent = "LOADING AI MODEL...";
+                    if (!model) {
+                       model = await cocoSsd.load();
+                    }
+                    
+                    analysisStatus.textContent = "ANALYZING ENVIRONMENT...";
+                    const imgCanvas = document.getElementById('photo-canvas');
+                    const predictions = await model.detect(imgCanvas);
+
+                    const hasPerson = predictions.some(p => p.class === 'person' && p.score > 0.5);
+                    const hasWaterObject = predictions.some(p => p.class === 'boat');
+                    const hasSufficientWaterColor = analyzeEnvironmentWithColor();
+
+                    if (hasPerson) {
+                        showNotification("Human presence detected. Please capture a photo of a natural water environment.", "error", 5000);
+                        setTimeout(startCamera, 1000);
+                        return;
+                    }
+
+                    if (!hasWaterObject && !hasSufficientWaterColor) {
+                        showNotification("Water not detected. Please capture a photo of a water body.", "error", 5000);
+                        setTimeout(startCamera, 1000);
+                        return;
+                    }
+                    
+                    // Filter objects for animation
+                    detectedObjects = predictions.filter(p => p.class !== 'person').map(p => {
+                        const [x, y, w, h] = p.bbox;
+                        return {
+                            x: (x / imgCanvas.width) * window.innerWidth,
+                            y: (y / imgCanvas.height) * window.innerHeight,
+                            w: (w / imgCanvas.width) * window.innerWidth,
+                            h: (h / imgCanvas.height) * window.innerHeight,
+                            label: p.class.toUpperCase(),
+                            score: p.score,
+                            color: '#4ade80', // Default to green
+                            triggerY: (y / imgCanvas.height),
+                            active: false,
+                            progress: 0
+                        };
+                    });
+
+
+                    const material = new THREE.ShaderMaterial({
+                        uniforms: {
+                            tDiffuse: { value: texture },
+                            resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                            time: { value: 0.0 },
+                            scanLineY: { value: 0.0 }
+                        },
+                        vertexShader,
+                        fragmentShader
+                    });
+
+                    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+                    scene.add(quad);
+                    
+                    // --- Status Text Sequence ---
+                    setTimeout(() => analysisStatus.textContent = "SCANNING IMAGE...", 500);
+                    setTimeout(() => analysisStatus.textContent = "IDENTIFYING OBJECTS...", 2500);
+                    setTimeout(() => analysisStatus.textContent = "ANALYSIS COMPLETE", 5000);
+
+                    const animate = () => {
+                        animationFrameId = requestAnimationFrame(animate);
+                        const elapsedTime = clock.getElapsedTime();
+                        const delta = clock.getDelta();
+                        
+                        const scanDuration = 5.0;
+                        const scanProgress = Math.min(elapsedTime / scanDuration, 1.0);
+                        
+                        material.uniforms.time.value = elapsedTime;
+                        material.uniforms.scanLineY.value = scanProgress;
+
+                        labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+                        detectedObjects.forEach(obj => {
+                            if (scanProgress >= obj.triggerY && !obj.active) {
+                                obj.active = true;
+                            }
+                            if (obj.active) {
+                                obj.progress += delta;
+                                drawLabelBox(obj);
+                            }
+                        });
+
+                        renderer.render(scene, camera);
+                    };
+                    animate();
+
+                    // --- Cleanup and Redirect ---
+                    setTimeout(() => {
+                        cancelAnimationFrame(animationFrameId);
+                        analysisContainer.style.display = 'none';
+                        renderer.dispose();
+                        window.location.href = 'form.page';
+                    }, 6500);
+
+                });
+
+                window.addEventListener('resize', () => {
+                    resizeCanvases();
+                });
+            }
+
 
             // --- Event Listeners ---
             permissionButton.addEventListener('click', requestPermissionsAndStart);
