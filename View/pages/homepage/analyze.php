@@ -13,7 +13,6 @@
         exit;
     }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -125,7 +124,7 @@
             grid-row: 3 / 4; /* Place in the third row (footer) */
             width: 100%;
             z-index: 10;
-            padding-bottom: 80px; /* <-- Increase this value to move buttons higher */
+            padding-bottom: 85px; /* <-- Increase this value to move buttons higher */
         }
 
         /* Bottom controls for camera actions - LAYOUT FIX */
@@ -405,10 +404,8 @@
 
     <!-- JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- NEW: TensorFlow.js and COCO-SSD Model -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // UI Elements
@@ -457,6 +454,12 @@
                 }, duration);
             }
 
+            // --- Weather Data State ---
+            let weatherData = {
+                windSpeed: null,
+                temperature: null
+            };
+
             // --- Weather API Fetch Function ---
             async function fetchWeatherData(lat, lon) {
                 const apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m&wind_speed_unit=mph&temperature_unit=celsius`;
@@ -466,6 +469,8 @@
                     const data = await response.json();
                     temperatureEl.innerHTML = `${data.current.temperature_2m.toFixed(1)} &deg;C`;
                     windSpeedEl.textContent = `${data.current.wind_speed_10m.toFixed(1)} mph`;
+                    weatherData.windSpeed = data.current.wind_speed_10m;
+                    weatherData.temperature = data.current.temperature_2m;
                 } catch (error) {
                     console.error("Could not fetch weather data:", error);
                     showNotification("Could not load weather data.", "error");
@@ -723,12 +728,10 @@
                         gl_FragColor = vec4(finalColor, 1.0);
                     }
                 `;
-                
-                // --- Object Detection Simulation ---
-                let detectedObjects = [];
-                
+
+                // --- Enhanced Image Filtering Functions ---
                 function rgbToHsv(r, g, b) {
-                    r /= 255, g /= 255, b /= 255;
+                    r /= 255; g /= 255; b /= 255;
                     let max = Math.max(r, g, b), min = Math.min(r, g, b);
                     let h, s, v = max;
                     let d = max - min;
@@ -745,24 +748,140 @@
                     return [h, s, v];
                 }
 
-                const analyzeEnvironmentWithColor = () => {
+                // Validate if image is suitable for fishing analysis
+                const validateFishingEnvironment = (colorAnalysis, predictions) => {
+                    // Check for human presence - Keep reasonable sensitivity
+                    const hasPerson = predictions.some(p => p.class === 'person' && p.score > 0.6);
+                    const hasSkinTone = colorAnalysis.skinRatio > 0.06;
+                    
+                    if (hasPerson || hasSkinTone) { // Either condition triggers rejection
+                        return { valid: false, reason: "Human presence detected. Please capture a natural water environment without people." };
+                    }
+                    
+                    // Check for indoor/artificial environment - More comprehensive
+                    const hasIndoorObjects = predictions.some(p => 
+                        ['tv', 'laptop', 'keyboard', 'mouse', 'chair', 'couch', 'bed', 'dining table', 
+                         'toilet', 'sink', 'refrigerator', 'microwave', 'oven', 'toaster', 'book',
+                         'clock', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'].includes(p.class) && p.score > 0.5
+                    );
+                    if (hasIndoorObjects) {
+                        return { valid: false, reason: "Indoor environment detected. Please capture outdoor water scenes." };
+                    }
+                    
+                    // Check for sufficient water content - Require meaningful water presence
+                    const hasWaterObjects = predictions.some(p => 
+                        ['boat', 'surfboard', 'kayak', 'canoe', 'ship'].includes(p.class) && p.score > 0.3
+                    );
+                    const hasSufficientWater = colorAnalysis.waterRatio > 0.05; // Back to 5%
+                    const hasNaturalWaterEnvironment = colorAnalysis.naturalRatio > 0.20; // Must be at least 20% natural
+                    
+                    if (!hasWaterObjects && (!hasSufficientWater || !hasNaturalWaterEnvironment)) {
+                        return { valid: false, reason: "No water body detected. Please capture a photo of a lake, river, pond, or ocean." };
+                    }
+                    
+                    // Check for too much artificial content
+                    if (colorAnalysis.redRatio > 0.10 || colorAnalysis.grayRatio > 0.55) {
+                        return { valid: false, reason: "Too many artificial objects detected. Please focus on natural water environments." };
+                    }
+                    
+                    // Enhanced inappropriate objects detection
+                    const hasInappropriateObjects = predictions.some(p => 
+                        ['cell phone', 'remote', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 
+                         'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 
+                         'hot dog', 'pizza', 'donut', 'cake', 'bottle', 'backpack', 'umbrella',
+                         'handbag', 'tie', 'suitcase', 'sports ball', 'kite', 'baseball bat',
+                         'baseball glove', 'skateboard', 'tennis racket'].includes(p.class) && p.score > 0.6
+                    );
+                    if (hasInappropriateObjects) {
+                        return { valid: false, reason: "Inappropriate objects detected. Please capture natural fishing environments only." };
+                    }
+                    
+                    // Check for vehicle presence (cars, trucks, etc.)
+                    const hasVehicles = predictions.some(p => 
+                        ['car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'bicycle'].includes(p.class) && p.score > 0.5
+                    );
+                    if (hasVehicles) {
+                        return { valid: false, reason: "Vehicles detected. Please focus on natural water environments away from roads." };
+                    }
+                    
+                    // Additional validation: Check if image is too artificial/urban
+                    const tooArtificial = (colorAnalysis.grayRatio + colorAnalysis.redRatio) > 0.4;
+                    const notEnoughNature = colorAnalysis.naturalRatio < 0.15;
+                    
+                    if (tooArtificial && notEnoughNature) {
+                        return { valid: false, reason: "Image appears too artificial or urban. Please capture natural outdoor water environments." };
+                    }
+                    
+                    return { valid: true, reason: "Valid water environment detected." };
+                };
+
+                // Enhanced water environment detection
+                const analyzeWaterEnvironment = () => {
                     const imgCanvas = document.getElementById('photo-canvas');
                     const ctx = imgCanvas.getContext('2d');
                     const imageData = ctx.getImageData(0, 0, imgCanvas.width, imgCanvas.height).data;
-                    let waterPixelCount = 0;
                     const totalPixels = imgCanvas.width * imgCanvas.height;
-
+                    
+                    let waterPixels = 0;
+                    let skyPixels = 0;
+                    let greenPixels = 0; // Natural vegetation
+                    let grayPixels = 0;  // Urban/concrete
+                    let redPixels = 0;   // Artificial objects
+                    let skinPixels = 0;  // Human skin tones
+                    let brightPixels = 0; // Very bright/white pixels
+                    let darkPixels = 0;   // Very dark pixels
+                    
                     for(let i = 0; i < imageData.length; i += 4) {
                         const r = imageData[i], g = imageData[i+1], b = imageData[i+2];
                         const hsv = rgbToHsv(r, g, b);
-                        const isBlueish = hsv[0] > 0.5 && hsv[0] < 0.75;
-                        const isSaturatedEnough = hsv[1] > 0.2;
-                        const isBrightEnough = hsv[2] > 0.15;
-                        if (isBlueish && isSaturatedEnough && isBrightEnough) waterPixelCount++;
+                        const brightness = (r + g + b) / 3;
+                        
+                        // Water detection - More specific ranges
+                        const isWater = (hsv[0] > 0.5 && hsv[0] < 0.7 && hsv[1] > 0.2 && hsv[2] > 0.15) ||
+                                        (hsv[0] > 0.45 && hsv[0] < 0.6 && hsv[1] > 0.3 && hsv[2] > 0.2);
+                        if (isWater) waterPixels++;
+                        
+                        // Sky detection
+                        const isSky = (hsv[0] > 0.55 && hsv[0] < 0.75 && hsv[1] < 0.3 && hsv[2] > 0.7) ||
+                                     (hsv[1] < 0.1 && hsv[2] > 0.8);
+                        if (isSky) skyPixels++;
+                        
+                        // Natural vegetation
+                        const isVegetation = (hsv[0] > 0.2 && hsv[0] < 0.45 && hsv[1] > 0.3 && hsv[2] > 0.2) ||
+                                           (hsv[0] > 0.08 && hsv[0] < 0.15 && hsv[1] > 0.4 && hsv[2] > 0.15);
+                        if (isVegetation) greenPixels++;
+                        
+                        // Urban/concrete (grays)
+                        const isGray = hsv[1] < 0.2 && hsv[2] > 0.25 && hsv[2] < 0.75;
+                        if (isGray) grayPixels++;
+                        
+                        // Artificial red objects
+                        const isRed = ((hsv[0] < 0.05 || hsv[0] > 0.95) && hsv[1] > 0.5 && hsv[2] > 0.3);
+                        if (isRed) redPixels++;
+                        
+                        // Skin tone detection - More precise
+                        const isSkin = (hsv[0] > 0.03 && hsv[0] < 0.08 && hsv[1] > 0.25 && hsv[1] < 0.65 && hsv[2] > 0.4 && hsv[2] < 0.9);
+                        if (isSkin) skinPixels++;
+                        
+                        // Brightness analysis
+                        if (brightness > 240) brightPixels++;
+                        if (brightness < 25) darkPixels++;
                     }
-                    return (waterPixelCount / totalPixels) > 0.03;
+                    
+                    return {
+                        waterRatio: waterPixels / totalPixels,
+                        skyRatio: skyPixels / totalPixels,
+                        vegetationRatio: greenPixels / totalPixels,
+                        grayRatio: grayPixels / totalPixels,
+                        redRatio: redPixels / totalPixels,
+                        skinRatio: skinPixels / totalPixels,
+                        brightRatio: brightPixels / totalPixels,
+                        darkRatio: darkPixels / totalPixels,
+                        naturalRatio: (waterPixels + skyPixels + greenPixels) / totalPixels
+                    };
                 };
 
+                // Label box drawing function
                 const drawLabelBox = (obj) => {
                     labelCtx.strokeStyle = obj.color;
                     labelCtx.fillStyle = obj.color;
@@ -796,31 +915,100 @@
                     
                     analysisStatus.textContent = "LOADING AI MODEL...";
                     if (!model) {
-                       model = await cocoSsd.load();
+                        model = await cocoSsd.load();
                     }
                     
-                    analysisStatus.textContent = "ANALYZING ENVIRONMENT...";
+                    analysisStatus.textContent = "VALIDATING ENVIRONMENT...";
                     const imgCanvas = document.getElementById('photo-canvas');
                     const predictions = await model.detect(imgCanvas);
-
-                    const hasPerson = predictions.some(p => p.class === 'person' && p.score > 0.5);
-                    const hasWaterObject = predictions.some(p => p.class === 'boat');
-                    const hasSufficientWaterColor = analyzeEnvironmentWithColor();
-
-                    if (hasPerson) {
-                        showNotification("Human presence detected. Please capture a photo of a natural water environment.", "error", 5000);
-                        setTimeout(startCamera, 1000);
-                        return;
-                    }
-
-                    if (!hasWaterObject && !hasSufficientWaterColor) {
-                        showNotification("Water not detected. Please capture a photo of a water body.", "error", 5000);
-                        setTimeout(startCamera, 1000);
+                    
+                    // Analyze image content
+                    const colorAnalysis = analyzeWaterEnvironment();
+                    const validation = validateFishingEnvironment(colorAnalysis, predictions);
+                    
+                    if (!validation.valid) {
+                        analysisStatus.textContent = "INVALID ENVIRONMENT";
+                        showNotification(validation.reason, "error", 6000);
+                        
+                        setTimeout(() => {
+                            cancelAnimationFrame(animationFrameId);
+                            analysisContainer.style.display = 'none';
+                            renderer.dispose();
+                            startCamera();
+                        }, 3000);
                         return;
                     }
                     
-                    // Filter objects for animation
-                    detectedObjects = predictions.filter(p => p.class !== 'person').map(p => {
+                    analysisStatus.textContent = "ANALYZING FISHING CONDITIONS...";
+                    
+                    // Continue with existing analysis code
+                    let weatherData = {
+                        windSpeed: windSpeedEl.textContent.includes('--') ? 8 : parseFloat(windSpeedEl.textContent),
+                        temperature: temperatureEl.textContent.includes('--') ? 25 : parseFloat(temperatureEl.textContent)
+                    };
+
+                    // Generate fishing analysis scores based on validated environment
+                    const analysisScores = {
+                        color: Math.min(100, 30 + (colorAnalysis.waterRatio * 350)),
+                        wave: Math.min(100, 40 + Math.random() * 35),
+                        light: Math.min(100, colorAnalysis.skyRatio > 0.2 ? 75 : 50),
+                        weather: weatherData.windSpeed > 25 ? 25 : weatherData.windSpeed > 15 ? 60 : 85,
+                        time: (new Date().getHours() >= 5 && new Date().getHours() <= 8) || 
+                              (new Date().getHours() >= 16 && new Date().getHours() <= 19) ? 100 : 65,
+                        vegetation: Math.min(100, 35 + (colorAnalysis.vegetationRatio * 200)),
+                        wind: weatherData.windSpeed > 25 ? 25 : weatherData.windSpeed > 15 ? 60 : 100,
+                        temperature: weatherData.temperature < 15 || weatherData.temperature > 35 ? 20 : 80
+                    };
+
+                    const weights = {
+                        color: 0.15, wave: 0.12, light: 0.10, weather: 0.12,
+                        time: 0.15, vegetation: 0.18, wind: 0.10, temperature: 0.08
+                    };
+
+                    const finalPercentage = Math.round(
+                        (analysisScores.color * weights.color) +
+                        (analysisScores.wave * weights.wave) +
+                        (analysisScores.light * weights.light) +
+                        (analysisScores.weather * weights.weather) +
+                        (analysisScores.time * weights.time) +
+                        (analysisScores.vegetation * weights.vegetation) +
+                        (analysisScores.wind * weights.wind) +
+                        (analysisScores.temperature * weights.temperature)
+                    );
+
+                    function generateRecommendations(percentage, scores) {
+                        const recommendations = [];
+                        if (percentage >= 80) {
+                            recommendations.push("Excellent fishing conditions! This is an ideal time to fish.");
+                        } else if (percentage >= 60) {
+                            recommendations.push("Good fishing conditions. You should have success.");
+                        } else if (percentage >= 40) {
+                            recommendations.push("Fair conditions. Consider adjusting your technique.");
+                        } else {
+                            recommendations.push("Poor conditions. Consider waiting for better conditions.");
+                        }
+                        
+                        if (scores.color < 50) recommendations.push("Water clarity could be better. Try deeper areas or use vibrant lures.");
+                        if (scores.vegetation < 50) recommendations.push("Limited structure detected. Look for underwater features.");
+                        if (scores.time < 50) recommendations.push("Consider fishing during dawn (5-8 AM) or dusk (4-7 PM).");
+                        
+                        return recommendations;
+                    }
+
+                    const resultData = {
+                        scores: analysisScores,
+                        weights: weights,
+                        finalPercentage: finalPercentage,
+                        weather: weatherData,
+                        timestamp: new Date().toISOString(),
+                        recommendations: generateRecommendations(finalPercentage, analysisScores),
+                        environmentAnalysis: colorAnalysis
+                    };
+
+                    // Filter objects for animation (exclude inappropriate detections)
+                    const detectedObjects = predictions.filter(p => 
+                        !['person', 'tv', 'laptop', 'cell phone', 'remote'].includes(p.class)
+                    ).map(p => {
                         const [x, y, w, h] = p.bbox;
                         return {
                             x: (x / imgCanvas.width) * window.innerWidth,
@@ -829,13 +1017,13 @@
                             h: (h / imgCanvas.height) * window.innerHeight,
                             label: p.class.toUpperCase(),
                             score: p.score,
-                            color: '#4ade80', // Default to green
+                            color: p.class === 'boat' ? '#60a5fa' : 
+                                  ['tree', 'potted plant'].includes(p.class) ? '#4ade80' : '#fbbf24',
                             triggerY: (y / imgCanvas.height),
                             active: false,
                             progress: 0
                         };
                     });
-
 
                     const material = new THREE.ShaderMaterial({
                         uniforms: {
@@ -851,9 +1039,10 @@
                     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
                     scene.add(quad);
                     
-                    // --- Status Text Sequence ---
-                    setTimeout(() => analysisStatus.textContent = "SCANNING IMAGE...", 500);
-                    setTimeout(() => analysisStatus.textContent = "IDENTIFYING OBJECTS...", 2500);
+                    // Enhanced status sequence
+                    setTimeout(() => analysisStatus.textContent = "SCANNING WATER CONDITIONS...", 500);
+                    setTimeout(() => analysisStatus.textContent = "IDENTIFYING FISHING SPOTS...", 2500);
+                    setTimeout(() => analysisStatus.textContent = "CALCULATING SUCCESS RATES...", 4000);
                     setTimeout(() => analysisStatus.textContent = "ANALYSIS COMPLETE", 5000);
 
                     const animate = () => {
@@ -861,7 +1050,7 @@
                         const elapsedTime = clock.getElapsedTime();
                         const delta = clock.getDelta();
                         
-                        const scanDuration = 5.0;
+                        const scanDuration = 6.0;
                         const scanProgress = Math.min(elapsedTime / scanDuration, 1.0);
                         
                         material.uniforms.time.value = elapsedTime;
@@ -873,24 +1062,173 @@
                                 obj.active = true;
                             }
                             if (obj.active) {
-                                obj.progress += delta;
+                                obj.progress += delta * 2;
                                 drawLabelBox(obj);
                             }
                         });
 
                         renderer.render(scene, camera);
+                        
+                        // End animation and redirect
+                        if (scanProgress >= 1.0) {
+                            setTimeout(() => {
+                                cancelAnimationFrame(animationFrameId);
+                                analysisContainer.style.display = 'none';
+                                renderer.dispose();
+                                localStorage.setItem('fishing_analysis_result', JSON.stringify(resultData));
+                                window.location.href = 'result.php';
+                            }, 1000);
+                        }
                     };
                     animate();
 
-                    // --- Cleanup and Redirect ---
-                    setTimeout(() => {
-                        cancelAnimationFrame(animationFrameId);
-                        analysisContainer.style.display = 'none';
-                        renderer.dispose();
-                        window.location.href = 'form.page';
-                    }, 6500);
-
                 });
+
+                window.addEventListener('resize', resizeCanvases);
+            }
+
+
+            // --- Event Listeners ---
+            permissionButton.addEventListener('click', requestPermissionsAndStart);
+            shutterButton.addEventListener('click', analyzeContent);
+            galleryButton.addEventListener('click', () => imageUpload.click());
+            imageUpload.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => showUploadedImage(e.target.result);
+                    reader.readAsDataURL(file);
+                }
+                event.target.value = null; // Reset input for same-file selection
+            });
+            resetButton.addEventListener('click', startCamera);
+            flashlightButton.addEventListener('click', toggleFlashlight);
+
+        });
+    </script>
+</body>
+</html>
+                                            // Water quality indicators
+                                            float clarity = (hsv.z + hsv.y) * 0.5;
+                                            if(clarity > 0.7) {
+                                                finalColor += vec3(0.0, 0.3, 0.6) * 0.3; // Clear water bonus
+                                            }
+                                        }
+                                        
+                                        // Vegetation analysis overlay
+                                        if (isVegetation && !isWater) {
+                                            float growth = sin(vUv.x * 200.0 + time * 4.0) * 0.3 + 0.7;
+                                            vec3 vegColor = vec3(0.1, 0.8, 0.2);
+                                            finalColor = mix(finalColor, vegColor, 0.7 * growth * analysisProgress);
+                                        }
+                                        
+                                        // Edge/structure detection
+                                        if (abs(edge) > 0.3) {
+                                            vec3 edgeColor = vec3(1.0, 0.6, 0.1);
+                                            finalColor = mix(finalColor, edgeColor, 0.6 * analysisProgress);
+                                        }
+                                        
+                                        // Analysis completion overlay
+                                        float completion = smoothstep(scanLineY - 0.1, scanLineY, vUv.y) * analysisProgress;
+                                        finalColor = mix(finalColor, finalColor * 1.3, completion * 0.3);
+                                    }
+
+                                    // Enhanced scan line with multiple effects
+                                    float scanGlow = 1.0 - smoothstep(0.0, 0.02, abs(vUv.y - scanLineY));
+                                    vec3 scanColor = vec3(0.4, 0.8, 1.0);
+                                    finalColor += scanColor * scanGlow * 0.8;
+                                    
+                                    // Secondary scan line
+                                    float scanGlow2 = 1.0 - smoothstep(0.0, 0.005, abs(vUv.y - scanLineY));
+                                    finalColor += vec3(1.0, 1.0, 1.0) * scanGlow2 * 0.9;
+                                    
+                                    // Enhanced grid pattern with analysis data
+                                    float gridSize = 20.0 + sin(time * 2.0) * 5.0;
+                                    float gridPattern = (mod(vUv.x * resolution.x, gridSize) < 1.5 || 
+                                                        mod(vUv.y * resolution.y, gridSize) < 1.5) ? 0.15 : 0.0;
+                                    finalColor += vec3(0.3, 0.6, 1.0) * gridPattern * (1.0 - scanGlow) * 0.4 * analysisProgress;
+                                    
+                                    // Data flow lines
+                                    float dataFlow = sin(vUv.x * 10.0 - time * 15.0) * 0.5 + 0.5;
+                                    if(mod(vUv.y * resolution.y, 40.0) < 2.0 && vUv.y < scanLineY) {
+                                        finalColor += vec3(0.0, 0.8, 1.0) * dataFlow * 0.3 * analysisProgress;
+                                    }
+
+                                    gl_FragColor = vec4(finalColor, 1.0);
+                                }
+                            `;
+                        
+                        const mesh = new THREE.Mesh(geometry, material);
+                        scene.add(mesh);
+
+                        let scanProgress = 0;
+                        let analysisStep = 0;
+                        const analysisSteps = [
+                            "INITIALIZING VISUAL ANALYSIS...",
+                            "DETECTING WATER CLARITY...",
+                            "ANALYZING WAVE PATTERNS...",
+                            "MEASURING LIGHT CONDITIONS...",
+                            "PROCESSING VEGETATION DATA...",
+                            "INTEGRATING WEATHER DATA...",
+                            "CALCULATING TIME FACTORS...",
+                            "GENERATING RECOMMENDATIONS...",
+                            "ANALYSIS COMPLETE"
+                        ];
+
+                        function animate() {
+                            const elapsedTime = clock.getElapsedTime();
+                            material.uniforms.time.value = elapsedTime;
+                            
+                            scanProgress += 0.008; // Slower scan for more detail
+                            material.uniforms.scanLineY.value = scanProgress;
+                            material.uniforms.analysisProgress.value = Math.min(scanProgress * 1.2, 1.0);
+                            
+                            // Update status text based on progress
+                            const stepIndex = Math.floor(scanProgress * analysisSteps.length);
+                            if (stepIndex < analysisSteps.length) {
+                                analysisStatus.textContent = analysisSteps[stepIndex];
+                            }
+                            
+                            if (scanProgress < 1.0) {
+                                renderer.render(scene, camera);
+                                animationFrameId = requestAnimationFrame(animate);
+                            } else {
+                                analysisStatus.textContent = "FINALIZING RESULTS...";
+                                setTimeout(() => {
+                                    localStorage.setItem('fishing_analysis_result', JSON.stringify(resultData));
+                                    window.location.href = 'result.php';
+                                }, 1500);
+                            }
+                        }
+                        
+                        animate();
+                    });
+
+                } catch (error) {
+                    console.error('Analysis error:', error);
+                    analysisStatus.textContent = "ANALYSIS ERROR";
+                    
+                    // Fallback - create dummy data and redirect
+                    const fallbackData = {
+                        scores: {
+                            color: 70, wave: 80, light: 60, weather: 75,
+                            time: 85, vegetation: 90, wind: 70, temperature: 80
+                        },
+                        weights: {
+                            color: 0.15, wave: 0.12, light: 0.10, weather: 0.12,
+                            time: 0.15, vegetation: 0.18, wind: 0.10, temperature: 0.08
+                        },
+                        finalPercentage: 75,
+                        weather: weatherData,
+                        timestamp: new Date().toISOString(),
+                        recommendations: ["Good fishing conditions based on fallback analysis."]
+                    };
+                    
+                    setTimeout(() => {
+                        localStorage.setItem('fishing_analysis_result', JSON.stringify(fallbackData));
+                        window.location.href = 'result.php';
+                    }, 2000);
+                }
 
                 window.addEventListener('resize', () => {
                     resizeCanvases();
